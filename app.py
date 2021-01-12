@@ -5,6 +5,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity
 from config import Config
+from apispec.ext.marshmallow import  MarshmallowPlugin
+from apispec import APISpec
+from flask_apispec.extension import FlaskApiSpec
+from schemas import VideoSchema, AuthSchema, UserSchema
+from flask_apispec import use_kwargs, marshal_with
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -20,6 +25,20 @@ Base.query = session.query_property()
 
 jwt = JWTManager(app)
 
+docs = FlaskApiSpec()
+
+docs.init_app(app)
+
+app.config.update({
+    'APISPEC_SPEC': APISpec(
+        title='videoblog',
+        version='v1',
+        openapi_version='2.0',
+        plugins=[MarshmallowPlugin()],
+    ),
+    'APISPEC_SWAGGER_URL': '/swagger/'
+})
+
 from models import Video, User
 
 Base.metadata.create_all(bind=engine)
@@ -27,58 +46,43 @@ Base.metadata.create_all(bind=engine)
 
 @app.route('/videos', methods=['GET'])
 @jwt_required
+@marshal_with(VideoSchema(many=True))
 def get_videos():
     user_id = get_jwt_identity()
     videos = Video.query.filter(Video.user_id == user_id)
-    serialized = []
-    for video in videos:
-        serialized.append({
-            'id': video.id,
-            'name': video.name,
-            'user_id': video.user_id,
-            'description': video.description
-        })
-    return jsonify(serialized)
+    return videos
 
 
 @app.route('/videos', methods=['POST'])
 @jwt_required
-def post_video():
+@use_kwargs(VideoSchema)
+@marshal_with(VideoSchema)
+def post_video(**kwargs):
     user_id = get_jwt_identity()
-    new_video = Video(user_id=user_id, **request.json)
+    new_video = Video(user_id=user_id, **kwargs)
     session.add(new_video)
     session.commit()
-    serialized = {
-        'id': new_video.id,
-        'name': new_video.name,
-        'user_id': new_video.user_id,
-        'description': new_video.description
-    }
-    return jsonify(serialized)
+    return new_video
 
 
 @app.route('/videos/<int:video_id>/', methods=['PUT'])
 @jwt_required
-def update_video(video_id):
+@marshal_with(VideoSchema)
+@use_kwargs(VideoSchema)
+def update_video(video_id, **kwargs):
     user_id = get_jwt_identity()
     video = Video.query.filter(Video.id == video_id, Video.user_id == user_id).first()
     if not video:
         return {'message': 'Error such video doesn\'t exist'}, 400
-    data = request.json
-    for key, value in data.items():
+    for key, value in kwargs.items():
         setattr(video, key, value)
     session.commit()
-    serialized = {
-        'id': video.id,
-        'name': video.name,
-        'user_id': video.user_id,
-        'description': video.description
-    }
-    return serialized
+    return video
 
 
 @app.route('/videos/<int:video_id>/', methods=['DELETE'])
 @jwt_required
+@marshal_with(VideoSchema)
 def delete_video(video_id):
     user_id = get_jwt_identity()
     video = Video.query.filter(Video.id == video_id, Video.user_id == user_id).first()
@@ -90,9 +94,10 @@ def delete_video(video_id):
 
 
 @app.route('/register', methods=['POST'])
-def register():
-    params = request.json
-    user = User(**params)
+@marshal_with(AuthSchema)
+@use_kwargs(UserSchema)
+def register(**kwargs):
+    user = User(**kwargs)
     session.add(user)
     session.commit()
     token = user.get_token()
@@ -100,9 +105,10 @@ def register():
 
 
 @app.route('/login', methods=['POST'])
-def login():
-    params = request.json
-    user = User.authenticate(**params)
+@use_kwargs(UserSchema(only=['email', 'password']))
+@marshal_with(AuthSchema)
+def login(**kwargs):
+    user = User.authenticate(**kwargs)
     token = user.get_token()
     return {'access_token': token}
 
@@ -111,6 +117,13 @@ def login():
 def shutdown_session(exception):
     session.remove()
 
+
+docs.register(get_videos)
+docs.register(post_video)
+docs.register(update_video)
+docs.register(delete_video)
+docs.register(register)
+docs.register(login)
 
 if __name__ == '__main__':
     app.run(port='8000')

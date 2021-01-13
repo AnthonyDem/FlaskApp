@@ -1,4 +1,4 @@
-from app import client
+from . import client
 
 def test_post():
     data = {

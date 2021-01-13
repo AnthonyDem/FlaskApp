@@ -68,7 +68,7 @@ Base.metadata.create_all(bind=engine)
 def get_videos():
     try:
         user_id = get_jwt_identity()
-        videos = Video.query.filter(Video.user_id == user_id)
+        videos = Video.get_video_list(user_id=user_id)
     except Exception as e:
         logger.warning(f'user: {user_id} videos - read action falling with error {e}')
         return {'message': str(e)}, 400
@@ -83,8 +83,7 @@ def post_video(**kwargs):
     try:
         user_id = get_jwt_identity()
         new_video = Video(user_id=user_id, **kwargs)
-        session.add(new_video)
-        session.commit()
+        new_video.save()
     except Exception as e:
         logger.warning(f'user: {user_id} video - create action failed with error {e}')
         return {'message': str(e)}, 400
@@ -95,15 +94,11 @@ def post_video(**kwargs):
 @jwt_required
 @marshal_with(VideoSchema)
 @use_kwargs(VideoSchema)
-def update_video(video_id, **kwargs):
+def update_videos_list(video_id, **kwargs):
     try:
         user_id = get_jwt_identity()
-        video = Video.query.filter(Video.id == video_id, Video.user_id == user_id).first()
-        if not video:
-            return {'message': 'Error such video doesn\'t exist'}, 400
-        for key, value in kwargs.items():
-            setattr(video, key, value)
-        session.commit()
+        video = Video.get_video(video_id, user_id)
+        video.update(**kwargs)
     except Exception as e:
         logger.warning(f'user: {user_id} video: {video_id} - updated failed with error {e}')
         return {'message': str(e)}, 400
@@ -116,11 +111,8 @@ def update_video(video_id, **kwargs):
 def delete_video(video_id):
     try:
         user_id = get_jwt_identity()
-        video = Video.query.filter(Video.id == video_id, Video.user_id == user_id).first()
-        if not video:
-            return {'message': 'Error such video doesn\'t exist'}, 400
-        session.delete(video)
-        session.commit()
+        video = Video.get_video(video_id, user_id)
+        video.delete()
     except Exception as e:
         logger.warning(f'user: {user_id} video: {video_id} deleting failed with error {e}')
         return {'message': str(e)}, 400

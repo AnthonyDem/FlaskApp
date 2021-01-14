@@ -17,7 +17,7 @@ app.config.from_object(Config)
 
 client = app.test_client()
 
-engine = create_engine('sqlite:///db.sqlite')
+engine = Config.SQLALCHEMY_DATABASE_URI
 
 session = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind=engine))
 
